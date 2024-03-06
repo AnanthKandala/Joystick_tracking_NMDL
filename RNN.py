@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import random_split
 from torch.utils.data import DataLoader
 import numpy as np
+from tqdm import tqdm
 
 # Check if CUDA is available
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -32,7 +33,7 @@ def create_images(data_file, im_len, stride_len):
     return [(cut_signals[i], trajectory[i]) for i in range(len(cut_signals))]
 
 # Load data
-dataDir = r'C:/Users/jeffr/PycharmProjects/EEG_RNN/joystick_track/data'
+dataDir = r'/orange/physics-dept/an.kandala/coding_projects/Deep_learning_projects/Neuromatch_project/Dataset/data'
 files = os.listdir(dataDir)
 data_file = scipy.io.loadmat(os.path.join(dataDir, files[3])) #Index 0 has 60 inputs, 1 and 2 have 64, and 3 has 48
 
@@ -122,7 +123,7 @@ class CursorRNN(nn.Module):
         return out
 
 # Define the hyperparameters and instantiate the RNN model
-input_size = 48  # Number of features
+input_size = 64  # Number of features
 hidden_size = 256  # Number of features in the hidden state
 num_layers = 3  # Number of recurrent layers
 output_size = 2  # Number of output dimensions (X and Y coordinates)
@@ -133,156 +134,50 @@ criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.00001)
 
 # # Train the model
-# num_epochs = 100
-# losses = []  # To store the loss values
-#
-# for epoch in range(num_epochs):
-#     epoch_loss = 0.0
-#     for i in range(len(x_train)):
-#         inputs = x_train[i].unsqueeze(0).to(device)  # Add batch dimension
-#         targets = y_train[i].unsqueeze(0).to(device)  # Add batch dimension
-#
-#         optimizer.zero_grad()
-#         outputs = model(inputs)
-#         loss = criterion(outputs, targets)
-#         loss.backward()
-#         optimizer.step()
-#
-#         epoch_loss += loss.item()
-#
-#     epoch_loss /= len(x_train)  # Calculate average loss for the epoch
-#     losses.append(epoch_loss)  # Store the average loss
-#
-#     print(f'Epoch [{epoch + 1}/{num_epochs}], Average Loss: {epoch_loss:.4f}')
-#
-# # Plot the loss
-# plt.plot(losses)
-# plt.xlabel('Epoch')
-# plt.ylabel('Loss')
-# plt.title('Loss Across Training')
-# plt.show()
-#
-# #Save the model here
-# torch.save(model.state_dict(), 'C:/Users/jeffr/PycharmProjects/EEG_RNN/model.pth')
-#
-# def eval(data_loader, net, criterion):
-#     total_loss = 0.0
-#     num_samples = 0
-#
-#     with torch.no_grad():
-#         for inputs, labels in data_loader:
-#             inputs = inputs.to(device)
-#             labels = labels.to(device)
-#
-#             outputs = net(inputs)
-#             loss = criterion(outputs, labels)
-#             total_loss += loss.item()
-#             num_samples += len(inputs)
-#
-#     return total_loss / num_samples
+num_epochs = 100
+losses = []  # To store the loss values
 
-# Load the pre-saved model state
-model_path = "C:/Users/jeffr/PycharmProjects/EEG_RNN/model.pth" #This model has 81% accuracy
-model.load_state_dict(torch.load(model_path))
+for epoch in tqdm(range(num_epochs)):
+    epoch_loss = 0.0
+    for i in range(len(x_train)):
+        inputs = x_train[i].unsqueeze(0).to(device)  # Add batch dimension
+        targets = y_train[i].unsqueeze(0).to(device)  # Add batch dimension
 
-# Testing the model
-model.eval()  # Set the model to evaluation mode
-
-test_loss = 0.0
-with torch.no_grad():  # Disable gradient calculation during testing
-    for i, (inputs, labels) in enumerate(test_loader):
-        inputs = inputs.to(device)
-        labels = labels.to(device)
-
-        # Normalize the labels before using them for the loss calculation
-        normalized_labels = normalize_test_data(labels, x_min, x_max, y_min, y_max)
-
-        # Forward pass
+        optimizer.zero_grad()
         outputs = model(inputs)
-        loss = criterion(outputs, normalized_labels)
+        loss = criterion(outputs, targets)
+        loss.backward()
+        optimizer.step()
 
-        test_loss += loss.item()
+        epoch_loss += loss.item()
 
-    test_loss /= len(test_loader)
+    epoch_loss /= len(x_train)  # Calculate average loss for the epoch
+    losses.append(epoch_loss)  # Store the average loss
 
-print(f'Test Loss: {test_loss:.4f}')
+    print(f'Epoch [{epoch + 1}/{num_epochs}], Average Loss: {epoch_loss:.4f}')
 
-# Define the eval_plot function to compute forward pass and predictions
-def eval_plot(data, net):
-    with torch.no_grad():
-        # Unpack the inputs and labels from the data loader
-        inputs, labels = data
-
-        # Move inputs and labels to the appropriate device
-        inputs = inputs.to(device)
-        labels = labels.to(device)
-
-        # forward + backward + optimize
-        outputs = net(inputs.unsqueeze(0))  # Add batch dimension
-    return outputs[0].cpu().numpy(), labels.cpu().numpy()
-
-# Select n consecutive images and plot the actual and predicted trajectories
-n = 100
-start = 15
-selected_data = test_dataset_normalized[start:start + n]
-predicted_labels = [eval_plot(data, model) for data in selected_data]
-
-# Extract the predicted and actual labels
-predicted_labels, actual_labels = zip(*predicted_labels)
-diff = [np.linalg.norm(predicted_labels[i] - actual_labels[i]) for i in range(len(predicted_labels))]
-print("Average difference between predicted and actual labels: ", np.mean(diff))
-
-# Plot the predicted and actual trajectories
-fig, ax = plt.subplots(dpi=300)
-ms = 3
-lw = 0.7
-
-# Plot the predicted trajectory as a line
-ax.plot([predicted_labels[i][0] for i in range(len(predicted_labels))], [predicted_labels[i][1] for i in range(len(predicted_labels))], label="predicted", color="red", lw=lw, marker='o', markersize=ms, markerfacecolor="none", markeredgewidth=0.7, linestyle='-', zorder=1)
-
-# Plot the actual trajectory as a line
-ax.plot([actual_labels[i][0] for i in range(len(actual_labels))], [actual_labels[i][1] for i in range(len(actual_labels))], label="actual", color="blue", lw=lw, marker='x', markersize=ms, linestyle='-', zorder=2)
-
-# Plot the dots again to show the individual points
-ax.plot([predicted_labels[i][0] for i in range(len(predicted_labels))], [predicted_labels[i][1] for i in range(len(predicted_labels))], color="red", lw=0, marker='o', markersize=ms, markerfacecolor="none", markeredgewidth=0.7, zorder=3)
-ax.plot([actual_labels[i][0] for i in range(len(actual_labels))], [actual_labels[i][1] for i in range(len(actual_labels))], color="blue", lw=0, marker='x', markersize=ms, zorder=4)
-
-ax.set_xlabel("x")
-ax.set_ylabel("y")
-ax.set_xlim(0, 1)
-ax.set_ylim(0, 1)
-ax.set_title("Predicted vs Actual Trajectory")
-ax.legend()
+# Plot the loss
+plt.plot(losses)
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Loss Across Training')
 plt.show()
 
-threshold = 0.1
-num_correct = 0
+#Save the model here
+torch.save(model.state_dict(), 'model.pth')
 
-# Calculate the test accuracy
-for predicted, actual in zip(predicted_labels, actual_labels):
-    distance = np.linalg.norm(predicted - actual)
-    if distance <= threshold:
-        num_correct += 1
+def eval(data_loader, net, criterion):
+    total_loss = 0.0
+    num_samples = 0
 
-test_accuracy = num_correct / len(predicted_labels) * 100.0
-print(f"Test Accuracy: {test_accuracy:.2f}%")
+    with torch.no_grad():
+        for inputs, labels in data_loader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
 
+            outputs = net(inputs)
+            loss = criterion(outputs, labels)
+            total_loss += loss.item()
+            num_samples += len(inputs)
 
-threshold = 0.1
-TP, FP, FN = 0, 0, 0
-
-# Calculate TP, FP, and FN
-for predicted, actual in zip(predicted_labels, actual_labels):
-    distance = np.linalg.norm(predicted - actual)
-    if distance <= threshold:
-        TP += 1
-    else:
-        FP += 1
-        FN += 1
-
-# Calculate precision, recall, and F1 score
-precision = TP / (TP + FP)
-recall = TP / (TP + FN)
-f1_score = 2 * (precision * recall) / (precision + recall)
-
-print(f"F1 Score: {f1_score:.4f}")
+    return total_loss / num_samples

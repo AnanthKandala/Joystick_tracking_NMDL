@@ -1,22 +1,30 @@
-import scipy.io
-import numpy as np
+import torch
+from torch.utils.data import Dataset, DataLoader, random_split
+from data_cleaning import generate_clean_data
 
 
+class CustomDataset(Dataset):
+    def __init__(self, snipped_data):
+        super(CustomDataset, self).__init__()
+        # Load or initialize your data
+        self.data = [torch.tensor(snip[0], dtype=torch.float) for snip in snipped_data]
+        self.labels = [torch.tensor(snip[1], dtype=torch.float) for snip in snipped_data] # Only for supervised tasks
+    def __len__(self):
+        return len(self.data)
 
-def create_images(data_file, im_len, stride_len):
-    '''takes the matlab file for a patient and creates images of the ecog data for training/testing. We have a 2D array made up of 
-    electrode voltage vs time. This single, long signal needs to chopped up into smaller peices to create the desired dataset of 'images'
-    args:
-        data_file: matlab file for a patient
-        i_len (int): length of each image (in ms)
-        stride_len (int): length of stride (in ms)
-    returns: 
-        image_data (list): list of (image, label) pairs. image (2D array) -->ecog voltages vs time, label (2D array) --> joystick coordinates vs time '''
-    data = scipy.io.loadmat(data_file)
-    array = data['data']
-    indices = [(i, i+im_len) for i in list(range(0, array.shape[0] - im_len +1, stride_len))]
-    cut_signals = [array[i[0]:i[1], :] for i in indices]
-    assert len(data['CursorPosX']) == len(data['CursorPosY'])
-    t_sample = [i+im_len-1 for i in list(range(0, len(data['CursorPosX']) - im_len +1, stride_len))]
-    trajectory = [(data['CursorPosX'][i,0], data['CursorPosY'][i,0]) for i in t_sample]
-    return [(cut_signals[i], trajectory[i]) for i in range(len(cut_signals))]
+    def __getitem__(self, idx):
+        sample = self.data[idx]
+        label = self.labels[idx]  # Only for supervised tasks
+        return sample, label
+    
+def generate_data_loader(data_file):
+    cleaned_data = generate_clean_data(data_file)
+    dataset = CustomDataset(cleaned_data)
+    per_train = 0.8 #percent of data to use for training
+    train_size = int(per_train * len(dataset))
+    test_size = len(dataset) - train_size
+    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+    batch_size = 32 #create batches
+    train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size, shuffle=False)
+    return cleaned_data, train_loader, test_loader
